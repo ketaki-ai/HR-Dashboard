@@ -58,18 +58,24 @@ function AddCandidateModal({ onClose, onAdded }: { onClose: () => void; onAdded:
       if (!res.ok) throw new Error('Failed')
       const data = await res.json()
       if (data.candidate) {
-        setForm(prev => ({
-          ...prev,
-          name: data.candidate.name || prev.name,
-          email: data.candidate.email || prev.email,
-          phone: data.candidate.phone || prev.phone,
-          education: data.candidate.education || prev.education,
-          location: data.candidate.location || prev.location,
-          totalExperience: data.candidate.totalExperience || prev.totalExperience,
-          relevantExperience: data.candidate.relevantExperience || prev.relevantExperience,
-          position: data.candidate.position || prev.position,
-        }))
+        const c = data.candidate
+        setForm(prev => {
+          const updated = {
+            ...prev,
+            name: (c.name && c.name.trim()) ? c.name.trim() : prev.name,
+            email: (c.email && c.email.trim()) ? c.email.trim() : prev.email,
+            phone: (c.phone && c.phone.trim()) ? c.phone.trim() : prev.phone,
+            education: (c.education && c.education.trim()) ? c.education.trim() : prev.education,
+            location: (c.location && c.location.trim()) ? c.location.trim() : prev.location,
+            totalExperience: (c.totalExperience && c.totalExperience.trim()) ? c.totalExperience.trim() : prev.totalExperience,
+            relevantExperience: (c.relevantExperience && c.relevantExperience.trim()) ? c.relevantExperience.trim() : prev.relevantExperience,
+            position: (c.position && c.position.trim()) ? c.position.trim() : prev.position,
+          }
+          return updated
+        })
         setParseSuccess(true)
+      } else {
+        setError('CV was read but no details could be extracted. Please fill in manually.')
       }
     } catch {
       setError('Could not read CV automatically. Please fill in the details manually.')
