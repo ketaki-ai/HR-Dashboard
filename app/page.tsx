@@ -374,8 +374,10 @@ export default function Dashboard() {
         <div className="max-w-7xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-4">
             <div>
-              <img src="/PIXEL_MINT_MEDIA_LOGO_00_3.jpg" alt="Pixel Mint Media" className="h-10 w-auto" />
+              <img src="/PIXEL_MINT_MEDIA_LOGO_00_3.jpg" alt="Pixel Mint Media" style={{height:'40px', width:'auto'}} />
 <div>
+  <h1 className="text-lg font-semibold text-stone-800">PMM Recruitment</h1>
+</div>
   <h1 className="text-lg font-semibold text-stone-800">PMM Recruitment</h1>
   <p className="text-xs text-stone-400">{total} candidates tracked</p>
 </div>
