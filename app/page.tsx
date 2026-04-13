@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 
 interface Candidate {
   id: string; name: string; email: string; phone: string
@@ -11,7 +11,6 @@ interface Candidate {
   offerAccepted: string; joined: string; reasonNotJoining: string
 }
 
-const STAGES = ['CV Received', 'HR Round', 'Technical Round', 'Culture Round', 'Selected']
 const STATUS_COLORS: Record<string, string> = {
   Selected: 'bg-emerald-100 text-emerald-800',
   Rejected: 'bg-red-100 text-red-700',
@@ -38,7 +37,46 @@ function AddCandidateModal({ onClose, onAdded }: { onClose: () => void; onAdded:
     monthYear: ''
   })
   const [saving, setSaving] = useState(false)
+  const [parsing, setParsing] = useState(false)
   const [error, setError] = useState('')
+  const [cvFileName, setCvFileName] = useState('')
+  const [parseSuccess, setParseSuccess] = useState(false)
+  const fileRef = useRef<HTMLInputElement>(null)
+
+  const handleCVUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    if (file.type !== 'application/pdf') { setError('Please upload a PDF file only'); return }
+    setCvFileName(file.name)
+    setParsing(true)
+    setError('')
+    setParseSuccess(false)
+    try {
+      const fd = new FormData()
+      fd.append('cv', file)
+      const res = await fetch('/api/parse-cv', { method: 'POST', body: fd })
+      if (!res.ok) throw new Error('Failed')
+      const data = await res.json()
+      if (data.candidate) {
+        setForm(prev => ({
+          ...prev,
+          name: data.candidate.name || prev.name,
+          email: data.candidate.email || prev.email,
+          phone: data.candidate.phone || prev.phone,
+          education: data.candidate.education || prev.education,
+          location: data.candidate.location || prev.location,
+          totalExperience: data.candidate.totalExperience || prev.totalExperience,
+          relevantExperience: data.candidate.relevantExperience || prev.relevantExperience,
+          position: data.candidate.position || prev.position,
+        }))
+        setParseSuccess(true)
+      }
+    } catch {
+      setError('Could not read CV automatically. Please fill in the details manually.')
+    } finally {
+      setParsing(false)
+    }
+  }
 
   const handleSubmit = async () => {
     if (!form.name.trim()) { setError('Candidate name is required'); return }
@@ -67,9 +105,34 @@ function AddCandidateModal({ onClose, onAdded }: { onClose: () => void; onAdded:
   return (
     <div className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center p-4" onClick={onClose}>
       <div className="bg-white rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto shadow-xl" onClick={e => e.stopPropagation()}>
-        <div className="p-6 border-b border-stone-100 flex justify-between items-center sticky top-0 bg-white rounded-t-2xl">
+        <div className="p-6 border-b border-stone-100 flex justify-between items-center sticky top-0 bg-white rounded-t-2xl z-10">
           <h2 className="text-lg font-semibold text-stone-800">Add New Candidate</h2>
           <button onClick={onClose} className="text-stone-400 hover:text-stone-600 text-xl">✕</button>
+        </div>
+        <div className="px-6 pt-5 pb-2">
+          <div onClick={() => fileRef.current?.click()}
+            className={`border-2 border-dashed rounded-xl p-5 text-center cursor-pointer transition-all ${parsing ? 'border-blue-300 bg-blue-50' : parseSuccess ? 'border-emerald-300 bg-emerald-50' : 'border-stone-200 hover:border-stone-400 bg-stone-50'}`}>
+            <input ref={fileRef} type="file" accept=".pdf" className="hidden" onChange={handleCVUpload} />
+            {parsing ? (
+              <div>
+                <div className="w-6 h-6 border-2 border-blue-400 border-t-transparent rounded-full animate-spin mx-auto mb-2"></div>
+                <p className="text-sm text-blue-600 font-medium">AI is reading your CV...</p>
+                <p className="text-xs text-blue-400 mt-1">Extracting candidate details automatically</p>
+              </div>
+            ) : parseSuccess ? (
+              <div>
+                <p className="text-2xl mb-1">✅</p>
+                <p className="text-sm text-emerald-700 font-medium">CV read successfully!</p>
+                <p className="text-xs text-emerald-500 mt-1">{cvFileName} — Review and complete the details below</p>
+              </div>
+            ) : (
+              <div>
+                <p className="text-2xl mb-1">📄</p>
+                <p className="text-sm text-stone-600 font-medium">Upload CV (PDF) for auto-fill</p>
+                <p className="text-xs text-stone-400 mt-1">AI will extract name, email, education, experience automatically</p>
+              </div>
+            )}
+          </div>
         </div>
         <div className="p-6 grid grid-cols-2 gap-4">
           <div className="col-span-2"><label className={lbl}>Full Name *</label><input className={inp} value={form.name} onChange={e => setForm({...form, name: e.target.value})} placeholder="e.g. Priya Sharma" /></div>
@@ -114,7 +177,7 @@ function AddCandidateModal({ onClose, onAdded }: { onClose: () => void; onAdded:
               <option value="">-</option><option>Yes</option><option>No</option><option>Pending</option>
             </select>
           </div>
-          <div className="col-span-2"><label className={lbl}>Reason for Not Joining (if applicable)</label><input className={inp} value={form.reasonNotJoining} onChange={e => setForm({...form, reasonNotJoining: e.target.value})} placeholder="e.g. High salary expectations, Got another offer..." /></div>
+          <div className="col-span-2"><label className={lbl}>Reason for Not Joining</label><input className={inp} value={form.reasonNotJoining} onChange={e => setForm({...form, reasonNotJoining: e.target.value})} placeholder="e.g. High salary expectations, Got another offer..." /></div>
         </div>
         {error && <p className="px-6 pb-2 text-red-500 text-sm">{error}</p>}
         <div className="p-6 pt-2 flex gap-3 justify-end border-t border-stone-100">
@@ -128,6 +191,114 @@ function AddCandidateModal({ onClose, onAdded }: { onClose: () => void; onAdded:
   )
 }
 
+function TimeChart({ candidates }: { candidates: Candidate[] }) {
+  const [view, setView] = useState<'monthly' | 'quarterly'>('monthly')
+
+  const getQuarter = (dateStr: string) => {
+    const d = new Date(dateStr)
+    if (isNaN(d.getTime())) return null
+    return `Q${Math.ceil((d.getMonth() + 1) / 3)} ${d.getFullYear()}`
+  }
+
+  const getMonth = (dateStr: string) => {
+    const d = new Date(dateStr)
+    if (isNaN(d.getTime())) return null
+    return d.toLocaleString('default', { month: 'short', year: '2-digit' })
+  }
+
+  const grouped: Record<string, { received: number; hr: number; technical: number; selected: number; date: Date }> = {}
+
+  candidates.filter(c => c.interviewDate && c.interviewDate.length >= 7).forEach(c => {
+    const key = view === 'monthly' ? getMonth(c.interviewDate) : getQuarter(c.interviewDate)
+    if (!key) return
+    if (!grouped[key]) grouped[key] = { received: 0, hr: 0, technical: 0, selected: 0, date: new Date(c.interviewDate) }
+    grouped[key].received++
+    if (c.hrInterview) grouped[key].hr++
+    if (c.technicalRound) grouped[key].technical++
+    if (c.finalStatus === 'Selected') grouped[key].selected++
+  })
+
+  const sortedKeys = Object.keys(grouped).sort((a, b) => grouped[a].date.getTime() - grouped[b].date.getTime())
+  const maxVal = Math.max(...sortedKeys.map(k => grouped[k].received), 1)
+
+  const bars = [
+    { key: 'received', label: 'CV Received', color: '#3b82f6' },
+    { key: 'hr', label: 'HR Round', color: '#8b5cf6' },
+    { key: 'technical', label: 'Technical', color: '#f59e0b' },
+    { key: 'selected', label: 'Selected', color: '#10b981' },
+  ]
+
+  if (sortedKeys.length === 0) return (
+    <div className="bg-white rounded-2xl p-6 border border-stone-200 text-center text-stone-400 text-sm py-16">
+      No dated interviews found to display trends
+    </div>
+  )
+
+  return (
+    <div className="bg-white rounded-2xl p-6 border border-stone-200">
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="text-sm font-semibold text-stone-600 uppercase tracking-widest">Recruitment Over Time</h2>
+        <div className="flex border border-stone-200 rounded-lg overflow-hidden">
+          <button onClick={() => setView('monthly')} className={`px-4 py-1.5 text-xs font-medium transition-all ${view === 'monthly' ? 'bg-stone-800 text-white' : 'text-stone-500 hover:bg-stone-50'}`}>Monthly</button>
+          <button onClick={() => setView('quarterly')} className={`px-4 py-1.5 text-xs font-medium transition-all ${view === 'quarterly' ? 'bg-stone-800 text-white' : 'text-stone-500 hover:bg-stone-50'}`}>Quarterly</button>
+        </div>
+      </div>
+      <div className="flex flex-wrap gap-4 mb-5">
+        {bars.map(b => (
+          <span key={b.key} className="flex items-center gap-1.5 text-xs text-stone-500">
+            <span className="w-3 h-3 rounded-sm inline-block" style={{ background: b.color }}></span>{b.label}
+          </span>
+        ))}
+      </div>
+      <div className="overflow-x-auto">
+        <div style={{ minWidth: `${sortedKeys.length * 72}px` }}>
+          <div className="flex items-end gap-1.5" style={{ height: '200px' }}>
+            {sortedKeys.map(key => (
+              <div key={key} className="flex-1 flex flex-col items-center">
+                <div className="w-full flex items-end gap-0.5 justify-center" style={{ height: '175px' }}>
+                  {bars.map(b => {
+                    const val = grouped[key][b.key as keyof typeof grouped[typeof key]] as number
+                    const h = Math.max((val / maxVal) * 155, val > 0 ? 3 : 0)
+                    return <div key={b.key} className="flex-1 rounded-t-sm" style={{ height: `${h}px`, background: b.color, opacity: 0.85 }} title={`${b.label}: ${val}`}></div>
+                  })}
+                </div>
+                <span className="text-xs text-stone-400 whitespace-nowrap mt-1">{key}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+      <div className="mt-5 overflow-x-auto">
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="border-b border-stone-100">
+              <th className="text-left py-2 text-stone-400 font-medium">Period</th>
+              {bars.map(b => <th key={b.key} className="text-right py-2 font-medium" style={{ color: b.color }}>{b.label}</th>)}
+              <th className="text-right py-2 text-stone-400 font-medium">Conversion %</th>
+            </tr>
+          </thead>
+          <tbody>
+            {sortedKeys.map(key => {
+              const d = grouped[key]
+              const conv = d.received > 0 ? ((d.selected / d.received) * 100).toFixed(0) : '0'
+              return (
+                <tr key={key} className="border-b border-stone-50">
+                  <td className="py-2 text-stone-700 font-medium">{key}</td>
+                  <td className="py-2 text-right text-stone-600">{d.received}</td>
+                  <td className="py-2 text-right text-stone-600">{d.hr}</td>
+                  <td className="py-2 text-right text-stone-600">{d.technical}</td>
+                  <td className="py-2 text-right font-semibold text-emerald-600">{d.selected}</td>
+                  <td className="py-2 text-right text-stone-400">{conv}%</td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
 export default function Dashboard() {
   const [candidates, setCandidates] = useState<Candidate[]>([])
   const [loading, setLoading] = useState(true)
@@ -136,7 +307,7 @@ export default function Dashboard() {
   const [filterStatus, setFilterStatus] = useState('all')
   const [filterDept, setFilterDept] = useState('all')
   const [showModal, setShowModal] = useState(false)
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'candidates'>('dashboard')
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'trends' | 'candidates'>('dashboard')
 
   const fetchCandidates = useCallback(async () => {
     try {
@@ -168,20 +339,11 @@ export default function Dashboard() {
   const joined = candidates.filter(c => c.joined === 'Yes').length
   const conversionRate = total > 0 ? ((selected / total) * 100).toFixed(1) : '0'
 
-  const deptCounts = candidates.reduce((acc, c) => {
-    if (c.department) acc[c.department] = (acc[c.department] || 0) + 1
-    return acc
-  }, {} as Record<string, number>)
+  const deptCounts = candidates.reduce((acc, c) => { if (c.department) acc[c.department] = (acc[c.department] || 0) + 1; return acc }, {} as Record<string, number>)
   const topDept = Object.entries(deptCounts).sort((a, b) => b[1] - a[1])
-
-  const sourceCounts = candidates.reduce((acc, c) => {
-    if (c.source) acc[c.source] = (acc[c.source] || 0) + 1
-    return acc
-  }, {} as Record<string, number>)
+  const sourceCounts = candidates.reduce((acc, c) => { if (c.source) acc[c.source] = (acc[c.source] || 0) + 1; return acc }, {} as Record<string, number>)
   const topSources = Object.entries(sourceCounts).sort((a, b) => b[1] - a[1])
-
   const depts = Array.from(new Set(candidates.map(c => c.department).filter(Boolean)))
-
   const funnelData = [
     { stage: 'CV Received', count: total, color: '#3b82f6' },
     { stage: 'HR Round', count: candidates.filter(c => c.hrInterview).length, color: '#8b5cf6' },
@@ -202,8 +364,6 @@ export default function Dashboard() {
   return (
     <div className="min-h-screen bg-stone-50">
       {showModal && <AddCandidateModal onClose={() => setShowModal(false)} onAdded={fetchCandidates} />}
-
-      {/* Header */}
       <header className="bg-white border-b border-stone-200 px-6 py-4 sticky top-0 z-40">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-4">
@@ -212,7 +372,7 @@ export default function Dashboard() {
               <p className="text-xs text-stone-400">{total} candidates tracked</p>
             </div>
             <nav className="flex gap-1 ml-6 border border-stone-200 rounded-lg p-1">
-              {(['dashboard', 'candidates'] as const).map(tab => (
+              {(['dashboard', 'trends', 'candidates'] as const).map(tab => (
                 <button key={tab} onClick={() => setActiveTab(tab)}
                   className={`px-4 py-1.5 text-sm rounded-md capitalize transition-all ${activeTab === tab ? 'bg-stone-800 text-white' : 'text-stone-500 hover:text-stone-700'}`}>
                   {tab}
@@ -226,27 +386,19 @@ export default function Dashboard() {
           </div>
         </div>
       </header>
-
       <main className="max-w-7xl mx-auto px-6 py-6">
-        {error && (
-          <div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-6 text-red-700 text-sm">
-            ⚠️ {error} — <a href="#setup" className="underline">See setup instructions below</a>
-          </div>
-        )}
+        {error && <div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-6 text-red-700 text-sm">⚠️ {error}</div>}
 
         {activeTab === 'dashboard' && (
           <div className="space-y-6">
-            {/* Stat Cards */}
-            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
               <StatCard label="Total Candidates" value={total} />
               <StatCard label="Selected" value={selected} color="text-emerald-600" sub={`${conversionRate}% conversion`} />
               <StatCard label="Shortlisted" value={shortlisted} color="text-amber-600" sub="In pipeline" />
               <StatCard label="Rejected" value={rejected} color="text-red-500" />
               <StatCard label="Joined" value={joined} color="text-blue-600" sub="Confirmed" />
-              <StatCard label="Conversion" value={`${conversionRate}%`} color="text-violet-600" sub="CV → Hired" />
+              <StatCard label="Conversion" value={`${conversionRate}%`} color="text-violet-600" sub="CV to Hired" />
             </div>
-
-            {/* Pipeline Funnel */}
             <div className="bg-white rounded-2xl p-6 border border-stone-200">
               <h2 className="text-sm font-semibold text-stone-600 uppercase tracking-widest mb-5">Recruitment Pipeline</h2>
               <div className="space-y-3">
@@ -256,8 +408,7 @@ export default function Dashboard() {
                     <div key={stage} className="flex items-center gap-4">
                       <span className="text-sm text-stone-500 w-36 flex-shrink-0">{stage}</span>
                       <div className="flex-1 bg-stone-100 rounded-full h-6 overflow-hidden">
-                        <div className="h-full rounded-full flex items-center px-3 transition-all duration-700"
-                          style={{ width: `${Math.max(pct, 2)}%`, backgroundColor: color }}>
+                        <div className="h-full rounded-full flex items-center px-3" style={{ width: `${Math.max(pct, 2)}%`, backgroundColor: color }}>
                           <span className="text-white text-xs font-medium">{count > 0 ? count : ''}</span>
                         </div>
                       </div>
@@ -267,79 +418,54 @@ export default function Dashboard() {
                 })}
               </div>
             </div>
-
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {/* By Department */}
               <div className="bg-white rounded-2xl p-6 border border-stone-200">
                 <h2 className="text-sm font-semibold text-stone-600 uppercase tracking-widest mb-5">By Department</h2>
                 <div className="space-y-3">
                   {topDept.map(([dept, count]) => (
                     <div key={dept} className="flex items-center gap-3">
                       <span className="text-sm text-stone-600 flex-1 truncate">{dept}</span>
-                      <div className="w-32 bg-stone-100 rounded-full h-2">
-                        <div className="h-2 bg-blue-400 rounded-full" style={{ width: `${(count / total) * 100}%` }}></div>
-                      </div>
+                      <div className="w-32 bg-stone-100 rounded-full h-2"><div className="h-2 bg-blue-400 rounded-full" style={{ width: `${(count / total) * 100}%` }}></div></div>
                       <span className="text-sm font-medium text-stone-600 w-8 text-right">{count}</span>
                     </div>
                   ))}
                 </div>
               </div>
-
-              {/* By Source */}
               <div className="bg-white rounded-2xl p-6 border border-stone-200">
                 <h2 className="text-sm font-semibold text-stone-600 uppercase tracking-widest mb-5">By Source</h2>
                 <div className="space-y-3">
                   {topSources.map(([src, count]) => (
                     <div key={src} className="flex items-center gap-3">
                       <span className="text-sm text-stone-600 flex-1 truncate">{src}</span>
-                      <div className="w-32 bg-stone-100 rounded-full h-2">
-                        <div className="h-2 bg-violet-400 rounded-full" style={{ width: `${(count / total) * 100}%` }}></div>
-                      </div>
+                      <div className="w-32 bg-stone-100 rounded-full h-2"><div className="h-2 bg-violet-400 rounded-full" style={{ width: `${(count / total) * 100}%` }}></div></div>
                       <span className="text-sm font-medium text-stone-600 w-8 text-right">{count}</span>
                     </div>
                   ))}
                 </div>
               </div>
             </div>
-
-            {/* Setup Instructions */}
-            <div id="setup" className="bg-amber-50 border border-amber-200 rounded-2xl p-6">
-              <h2 className="text-sm font-semibold text-amber-800 uppercase tracking-widest mb-3">⚙️ Setup Required</h2>
-              <div className="text-sm text-amber-900 space-y-2">
-                <p className="font-medium">To connect this dashboard to your Google Sheet, add these to Vercel Environment Variables:</p>
-                <div className="font-mono bg-amber-100 rounded-lg p-3 text-xs space-y-1">
-                  <p><strong>GOOGLE_SHEET_ID</strong> = your Google Sheet ID (from the URL)</p>
-                  <p><strong>GOOGLE_SERVICE_ACCOUNT_KEY</strong> = your service account JSON key</p>
-                </div>
-                <p className="text-xs text-amber-700">See the README.md file included in your download for step-by-step instructions.</p>
-              </div>
-            </div>
           </div>
         )}
 
+        {activeTab === 'trends' && <TimeChart candidates={candidates} />}
+
         {activeTab === 'candidates' && (
           <div className="space-y-4">
-            {/* Filters */}
             <div className="flex flex-wrap gap-3">
-              <input value={search} onChange={e => setSearch(e.target.value)}
-                placeholder="Search by name or position..."
+              <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search by name or position..."
                 className="border border-stone-200 rounded-lg px-4 py-2 text-sm focus:outline-none focus:border-stone-400 bg-white flex-1 min-w-48" />
-              <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}
-                className="border border-stone-200 rounded-lg px-3 py-2 text-sm bg-white text-stone-600 focus:outline-none">
+              <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} className="border border-stone-200 rounded-lg px-3 py-2 text-sm bg-white text-stone-600 focus:outline-none">
                 <option value="all">All Status</option>
                 <option value="Selected">Selected</option>
                 <option value="Rejected">Rejected</option>
                 <option value="Shortlisted">Shortlisted</option>
               </select>
-              <select value={filterDept} onChange={e => setFilterDept(e.target.value)}
-                className="border border-stone-200 rounded-lg px-3 py-2 text-sm bg-white text-stone-600 focus:outline-none">
+              <select value={filterDept} onChange={e => setFilterDept(e.target.value)} className="border border-stone-200 rounded-lg px-3 py-2 text-sm bg-white text-stone-600 focus:outline-none">
                 <option value="all">All Departments</option>
                 {depts.map(d => <option key={d}>{d}</option>)}
               </select>
               <span className="text-sm text-stone-400 flex items-center">{filtered.length} results</span>
             </div>
-
-            {/* Table */}
             <div className="bg-white rounded-2xl border border-stone-200 overflow-hidden">
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
@@ -355,27 +481,20 @@ export default function Dashboard() {
                       <tr><td colSpan={12} className="text-center py-12 text-stone-400">No candidates found</td></tr>
                     ) : filtered.map((c, i) => (
                       <tr key={i} className="border-b border-stone-50 hover:bg-stone-50 transition-colors">
-                        <td className="px-4 py-3">
-                          <div className="font-medium text-stone-800">{c.name}</div>
-                          {c.email && <div className="text-xs text-stone-400 truncate max-w-32">{c.email}</div>}
-                        </td>
+                        <td className="px-4 py-3"><div className="font-medium text-stone-800">{c.name}</div>{c.email && <div className="text-xs text-stone-400 truncate max-w-32">{c.email}</div>}</td>
                         <td className="px-4 py-3 text-stone-600 whitespace-nowrap">{c.position}</td>
                         <td className="px-4 py-3 text-stone-500 whitespace-nowrap">{c.department}</td>
                         <td className="px-4 py-3 text-stone-500">{c.education || '—'}</td>
                         <td className="px-4 py-3 text-stone-500 whitespace-nowrap">{c.totalExperience || '—'}</td>
                         <td className="px-4 py-3 text-stone-500">{c.source || '—'}</td>
-                        <td className="px-4 py-3 text-stone-500 whitespace-nowrap">{c.interviewDate ? c.interviewDate.substring(0, 10) : '—'}</td>
+                        <td className="px-4 py-3 text-stone-500 whitespace-nowrap">{c.interviewDate ? c.interviewDate.substring(0,10) : '—'}</td>
                         <td className="px-4 py-3 text-stone-500 whitespace-nowrap">{c.hrInterview || '—'}</td>
                         <td className="px-4 py-3 text-stone-500">{c.technicalRound || '—'}</td>
                         <td className="px-4 py-3 text-stone-500">{c.finalRound || '—'}</td>
                         <td className="px-4 py-3 whitespace-nowrap">
-                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${STATUS_COLORS[c.finalStatus] || 'bg-stone-100 text-stone-600'}`}>
-                            {c.finalStatus || '—'}
-                          </span>
+                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${STATUS_COLORS[c.finalStatus] || 'bg-stone-100 text-stone-600'}`}>{c.finalStatus || '—'}</span>
                         </td>
-                        <td className="px-4 py-3 text-stone-500 whitespace-nowrap">
-                          {c.offeredCTC ? `₹${Number(c.offeredCTC).toLocaleString('en-IN')}` : '—'}
-                        </td>
+                        <td className="px-4 py-3 text-stone-500 whitespace-nowrap">{c.offeredCTC ? `₹${Number(c.offeredCTC).toLocaleString('en-IN')}` : '—'}</td>
                       </tr>
                     ))}
                   </tbody>
