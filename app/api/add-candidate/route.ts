@@ -1,13 +1,20 @@
 import { NextResponse } from 'next/server'
-import { addCandidate } from '@/lib/sheets'
+import { getCandidates } from '@/lib/sheets'
 
-export async function POST(request: Request) {
+export const dynamic = 'force-dynamic'
+export const revalidate = 0
+
+export async function GET() {
   try {
-    const body = await request.json()
-    await addCandidate(body)
-    return NextResponse.json({ success: true })
+    const candidates = await getCandidates()
+    return NextResponse.json({ candidates }, {
+      headers: {
+        'Cache-Control': 'no-store, no-cache, must-revalidate',
+        'Pragma': 'no-cache',
+      }
+    })
   } catch (error) {
-    console.error('Error adding candidate:', error)
-    return NextResponse.json({ error: 'Failed to add candidate' }, { status: 500 })
+    console.error('Error fetching candidates:', error)
+    return NextResponse.json({ error: 'Failed to fetch candidates' }, { status: 500 })
   }
 }
