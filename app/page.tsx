@@ -180,7 +180,7 @@ export default function Dashboard() {
   }, {} as Record<string, number>)
   const topSources = Object.entries(sourceCounts).sort((a, b) => b[1] - a[1])
 
-  const depts = [...new Set(candidates.map(c => c.department).filter(Boolean))]
+  const depts = Array.from(new Set(candidates.map(c => c.department).filter(Boolean)))
 
   const funnelData = [
     { stage: 'CV Received', count: total, color: '#3b82f6' },
