@@ -198,12 +198,27 @@ function AddCandidateModal({ onClose, onAdded }: { onClose: () => void; onAdded:
 }
 
 function TimeChart({ candidates }: { candidates: Candidate[] }) {
-  const [view, setView] = useState<'monthly' | 'quarterly'>('monthly')
+  type ViewType = 'fy' | 'quarterly' | 'monthly'
+  const [view, setView] = useState<ViewType>('fy')
+  const [selectedFY, setSelectedFY] = useState<string | null>(null)
+  const [selectedQ, setSelectedQ] = useState<string | null>(null)
 
-  const getQuarter = (dateStr: string) => {
+  // FY = Apr to Mar, e.g. FY 2024-25 means Apr 2024 - Mar 2025
+  const getFY = (dateStr: string) => {
     const d = new Date(dateStr)
     if (isNaN(d.getTime())) return null
-    return `Q${Math.ceil((d.getMonth() + 1) / 3)} ${d.getFullYear()}`
+    const yr = d.getMonth() >= 3 ? d.getFullYear() : d.getFullYear() - 1
+    return `FY ${yr}-${String(yr + 1).slice(2)}`
+  }
+
+  const getFYQuarter = (dateStr: string) => {
+    const d = new Date(dateStr)
+    if (isNaN(d.getTime())) return null
+    const m = d.getMonth() // 0-11
+    // Q1: Apr-Jun (3-5), Q2: Jul-Sep (6-8), Q3: Oct-Dec (9-11), Q4: Jan-Mar (0-2)
+    const q = m >= 3 && m <= 5 ? 'Q1' : m >= 6 && m <= 8 ? 'Q2' : m >= 9 && m <= 11 ? 'Q3' : 'Q4'
+    const yr = m >= 3 ? d.getFullYear() : d.getFullYear() - 1
+    return `${q} FY${yr}-${String(yr + 1).slice(2)}`
   }
 
   const getMonth = (dateStr: string) => {
@@ -212,10 +227,26 @@ function TimeChart({ candidates }: { candidates: Candidate[] }) {
     return d.toLocaleString('default', { month: 'short', year: '2-digit' })
   }
 
-  const grouped: Record<string, { received: number; hr: number; technical: number; selected: number; date: Date }> = {}
+  type GroupEntry = { received: number; hr: number; technical: number; selected: number; date: Date }
+  const grouped: Record<string, GroupEntry> = {}
 
-  candidates.filter(c => c.interviewDate && c.interviewDate.length >= 7).forEach(c => {
-    const key = view === 'monthly' ? getMonth(c.interviewDate) : getQuarter(c.interviewDate)
+  const validCandidates = candidates.filter(c => c.interviewDate && c.interviewDate.length >= 7)
+
+  validCandidates.forEach(c => {
+    let key: string | null = null
+    if (view === 'fy') key = getFY(c.interviewDate)
+    else if (view === 'quarterly') {
+      const q = getFYQuarter(c.interviewDate)
+      const fy = getFY(c.interviewDate)
+      if (selectedFY && fy !== selectedFY) return
+      key = q
+    } else {
+      const q = getFYQuarter(c.interviewDate)
+      const fy = getFY(c.interviewDate)
+      if (selectedFY && fy !== selectedFY) return
+      if (selectedQ && q !== selectedQ) return
+      key = getMonth(c.interviewDate)
+    }
     if (!key) return
     if (!grouped[key]) grouped[key] = { received: 0, hr: 0, technical: 0, selected: 0, date: new Date(c.interviewDate) }
     grouped[key].received++
@@ -234,6 +265,20 @@ function TimeChart({ candidates }: { candidates: Candidate[] }) {
     { key: 'selected', label: 'Selected', color: '#10b981' },
   ]
 
+  // Get all FYs for breadcrumb
+  const allFYs = Array.from(new Set(validCandidates.map(c => getFY(c.interviewDate)).filter(Boolean))).sort()
+  const allFYQuarters = selectedFY ? Array.from(new Set(validCandidates.filter(c => getFY(c.interviewDate) === selectedFY).map(c => getFYQuarter(c.interviewDate)).filter(Boolean))).sort() : []
+
+  const handleBarClick = (key: string) => {
+    if (view === 'fy') {
+      setSelectedFY(key)
+      setView('quarterly')
+    } else if (view === 'quarterly') {
+      setSelectedQ(key)
+      setView('monthly')
+    }
+  }
+
   if (sortedKeys.length === 0) return (
     <div className="bg-white rounded-2xl p-6 border border-stone-200 text-center text-stone-400 text-sm py-16">
       No dated interviews found to display trends
@@ -242,13 +287,47 @@ function TimeChart({ candidates }: { candidates: Candidate[] }) {
 
   return (
     <div className="bg-white rounded-2xl p-6 border border-stone-200">
-      <div className="flex items-center justify-between mb-4">
-        <h2 className="text-sm font-semibold text-stone-600 uppercase tracking-widest">Recruitment Over Time</h2>
+      <div className="flex items-center justify-between mb-3">
+        <h2 className="text-sm font-semibold text-stone-600 uppercase tracking-widest">Recruitment Trends</h2>
         <div className="flex border border-stone-200 rounded-lg overflow-hidden">
-          <button onClick={() => setView('monthly')} className={`px-4 py-1.5 text-xs font-medium transition-all ${view === 'monthly' ? 'bg-stone-800 text-white' : 'text-stone-500 hover:bg-stone-50'}`}>Monthly</button>
-          <button onClick={() => setView('quarterly')} className={`px-4 py-1.5 text-xs font-medium transition-all ${view === 'quarterly' ? 'bg-stone-800 text-white' : 'text-stone-500 hover:bg-stone-50'}`}>Quarterly</button>
+          <button onClick={() => { setView('fy'); setSelectedFY(null); setSelectedQ(null) }}
+            className={`px-4 py-1.5 text-xs font-medium transition-all ${view === 'fy' ? 'bg-stone-800 text-white' : 'text-stone-500 hover:bg-stone-50'}`}>
+            Financial Year
+          </button>
+          <button onClick={() => setView('quarterly')}
+            className={`px-4 py-1.5 text-xs font-medium transition-all ${view === 'quarterly' ? 'bg-stone-800 text-white' : 'text-stone-500 hover:bg-stone-50'}`}>
+            Quarterly
+          </button>
+          <button onClick={() => setView('monthly')}
+            className={`px-4 py-1.5 text-xs font-medium transition-all ${view === 'monthly' ? 'bg-stone-800 text-white' : 'text-stone-500 hover:bg-stone-50'}`}>
+            Monthly
+          </button>
         </div>
       </div>
+
+      {/* Breadcrumb */}
+      <div className="flex items-center gap-2 mb-4 text-xs text-stone-400">
+        <button onClick={() => { setView('fy'); setSelectedFY(null); setSelectedQ(null) }}
+          className={`hover:text-stone-600 ${view === 'fy' ? 'text-stone-700 font-medium' : ''}`}>
+          All Years
+        </button>
+        {selectedFY && <>
+          <span>›</span>
+          <button onClick={() => { setView('quarterly'); setSelectedQ(null) }}
+            className={`hover:text-stone-600 ${view === 'quarterly' ? 'text-stone-700 font-medium' : ''}`}>
+            {selectedFY}
+          </button>
+        </>}
+        {selectedQ && <>
+          <span>›</span>
+          <span className="text-stone-700 font-medium">{selectedQ}</span>
+        </>}
+        {view !== 'fy' && <span className="text-stone-300 ml-1">(click a bar to drill down)</span>}
+      </div>
+
+      {view === 'fy' && <p className="text-xs text-stone-400 mb-4">April – March financial year. Click any bar to see quarterly breakdown.</p>}
+      {view === 'quarterly' && <p className="text-xs text-stone-400 mb-4">Q1: Apr–Jun · Q2: Jul–Sep · Q3: Oct–Dec · Q4: Jan–Mar. Click any bar to see monthly breakdown.</p>}
+
       <div className="flex flex-wrap gap-4 mb-5">
         {bars.map(b => (
           <span key={b.key} className="flex items-center gap-1.5 text-xs text-stone-500">
@@ -256,24 +335,29 @@ function TimeChart({ candidates }: { candidates: Candidate[] }) {
           </span>
         ))}
       </div>
+
       <div className="overflow-x-auto">
-        <div style={{ minWidth: `${sortedKeys.length * 72}px` }}>
-          <div className="flex items-end gap-1.5" style={{ height: '200px' }}>
+        <div style={{ minWidth: `${sortedKeys.length * 80}px` }}>
+          <div className="flex items-end gap-2" style={{ height: '200px' }}>
             {sortedKeys.map(key => (
-              <div key={key} className="flex-1 flex flex-col items-center">
+              <div key={key} className={`flex-1 flex flex-col items-center ${view !== 'monthly' ? 'cursor-pointer group' : ''}`}
+                onClick={() => handleBarClick(key)}>
                 <div className="w-full flex items-end gap-0.5 justify-center" style={{ height: '175px' }}>
                   {bars.map(b => {
-                    const val = grouped[key][b.key as keyof typeof grouped[typeof key]] as number
+                    const val = grouped[key][b.key as keyof GroupEntry] as number
                     const h = Math.max((val / maxVal) * 155, val > 0 ? 3 : 0)
-                    return <div key={b.key} className="flex-1 rounded-t-sm" style={{ height: `${h}px`, background: b.color, opacity: 0.85 }} title={`${b.label}: ${val}`}></div>
+                    return <div key={b.key} className="flex-1 rounded-t-sm group-hover:opacity-100 transition-opacity"
+                      style={{ height: `${h}px`, background: b.color, opacity: 0.8 }}
+                      title={`${b.label}: ${val}`}></div>
                   })}
                 </div>
-                <span className="text-xs text-stone-400 whitespace-nowrap mt-1">{key}</span>
+                <span className="text-xs text-stone-400 whitespace-nowrap mt-1 group-hover:text-stone-600">{key}</span>
               </div>
             ))}
           </div>
         </div>
       </div>
+
       <div className="mt-5 overflow-x-auto">
         <table className="w-full text-xs">
           <thead>
@@ -288,7 +372,8 @@ function TimeChart({ candidates }: { candidates: Candidate[] }) {
               const d = grouped[key]
               const conv = d.received > 0 ? ((d.selected / d.received) * 100).toFixed(0) : '0'
               return (
-                <tr key={key} className="border-b border-stone-50">
+                <tr key={key} className={`border-b border-stone-50 ${view !== 'monthly' ? 'cursor-pointer hover:bg-stone-50' : ''}`}
+                  onClick={() => handleBarClick(key)}>
                   <td className="py-2 text-stone-700 font-medium">{key}</td>
                   <td className="py-2 text-right text-stone-600">{d.received}</td>
                   <td className="py-2 text-right text-stone-600">{d.hr}</td>
