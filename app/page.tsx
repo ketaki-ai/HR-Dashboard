@@ -15,6 +15,7 @@ const STATUS_COLORS: Record<string, string> = {
   Selected: 'bg-emerald-100 text-emerald-800',
   Rejected: 'bg-red-100 text-red-700',
   Shortlisted: 'bg-amber-100 text-amber-800',
+  'Joined & Left': 'bg-orange-100 text-orange-700',
 }
 
 function StatCard({ label, value, sub, color }: { label: string; value: string | number; sub?: string; color?: string }) {
@@ -168,7 +169,7 @@ function AddCandidateModal({ onClose, onAdded }: { onClose: () => void; onAdded:
           <div><label className={lbl}>Culture Round Interviewer</label><input className={inp} value={form.finalRound} onChange={e => setForm({...form, finalRound: e.target.value})} placeholder="Name or leave blank" /></div>
           <div><label className={lbl}>Current Status</label>
             <select className={inp} value={form.finalStatus} onChange={e => setForm({...form, finalStatus: e.target.value})}>
-              {['Shortlisted','Selected','Rejected'].map(s => <option key={s}>{s}</option>)}
+              {['Shortlisted','Selected','Rejected','Joined & Left'].map(s => <option key={s}>{s}</option>)}
             </select>
           </div>
           <div><label className={lbl}>Offered CTC (₹)</label><input className={inp} value={form.offeredCTC} onChange={e => setForm({...form, offeredCTC: e.target.value})} placeholder="e.g. 50000" /></div>
@@ -428,18 +429,37 @@ export default function Dashboard() {
   const shortlisted = candidates.filter(c => c.finalStatus === 'Shortlisted').length
   const rejected = candidates.filter(c => c.finalStatus === 'Rejected').length
   const joined = candidates.filter(c => c.joined === 'Yes').length
-  const conversionRate = total > 0 ? ((selected / total) * 100).toFixed(1) : '0'
+  const joinedAndLeft = candidates.filter(c => c.finalStatus === 'Joined & Left').length
+  const offered = candidates.filter(c => c.offeredCTC && c.offeredCTC !== '').length
+  const selectedToJoinedRatio = selected > 0 ? ((joined / selected) * 100).toFixed(0) : '0'
+  const offeredToJoinedRatio = offered > 0 ? ((joined / offered) * 100).toFixed(0) : '0'
+  const hrRound = candidates.filter(c => c.hrInterview).length
+  const technical = candidates.filter(c => c.technicalRound).length
+  const culture = candidates.filter(c => c.finalRound).length
 
   const deptCounts = candidates.reduce((acc, c) => { if (c.department) acc[c.department] = (acc[c.department] || 0) + 1; return acc }, {} as Record<string, number>)
   const topDept = Object.entries(deptCounts).sort((a, b) => b[1] - a[1])
   const sourceCounts = candidates.reduce((acc, c) => { if (c.source) acc[c.source] = (acc[c.source] || 0) + 1; return acc }, {} as Record<string, number>)
   const topSources = Object.entries(sourceCounts).sort((a, b) => b[1] - a[1])
+
+  // Source quality — selected per source
+  const sourceQuality = candidates.reduce((acc, c) => {
+    if (!c.source) return acc
+    if (!acc[c.source]) acc[c.source] = { total: 0, selected: 0 }
+    acc[c.source].total++
+    if (c.finalStatus === 'Selected') acc[c.source].selected++
+    return acc
+  }, {} as Record<string, { total: number; selected: number }>)
+  const topSourceQuality = Object.entries(sourceQuality)
+    .map(([src, d]) => ({ src, ...d, rate: d.total > 0 ? (d.selected / d.total) * 100 : 0 }))
+    .sort((a, b) => b.selected - a.selected)
+
   const depts = Array.from(new Set(candidates.map(c => c.department).filter(Boolean)))
+
   const funnelData = [
-    { stage: 'CV Received', count: total, color: '#3b82f6' },
-    { stage: 'HR Round', count: candidates.filter(c => c.hrInterview).length, color: '#8b5cf6' },
-    { stage: 'Technical Round', count: candidates.filter(c => c.technicalRound).length, color: '#f59e0b' },
-    { stage: 'Culture Round', count: candidates.filter(c => c.finalRound).length, color: '#ec4899' },
+    { stage: 'HR Round', count: hrRound, color: '#8b5cf6' },
+    { stage: 'Technical Round', count: technical, color: '#f59e0b' },
+    { stage: 'Culture Round', count: culture, color: '#ec4899' },
     { stage: 'Selected', count: selected, color: '#10b981' },
   ]
 
@@ -482,64 +502,121 @@ export default function Dashboard() {
         {error && <div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-6 text-red-700 text-sm">⚠️ {error}</div>}
 
         {activeTab === 'dashboard' && (
-          <div className="space-y-6">
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-              <StatCard label="Total Candidates" value={total} />
-              <StatCard label="Selected" value={selected} color="text-emerald-600" sub={`${conversionRate}% conversion`} />
-              <StatCard label="Shortlisted" value={shortlisted} color="text-amber-600" sub="In pipeline" />
-              <StatCard label="Rejected" value={rejected} color="text-red-500" />
-              <StatCard label="Joined" value={joined} color="text-blue-600" sub="Confirmed" />
-              <StatCard label="Conversion" value={`${conversionRate}%`} color="text-violet-600" sub="CV to Hired" />
+          <div className="space-y-5">
+            {/* Top stat cards */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="bg-white rounded-2xl p-5 border border-stone-200">
+                <p className="text-xs text-stone-400 uppercase tracking-widest mb-1 font-medium">Total Interviewed</p>
+                <p className="text-3xl font-semibold text-stone-800">{total}</p>
+                <p className="text-xs text-stone-400 mt-1">{shortlisted} in pipeline</p>
+              </div>
+              <div className="bg-white rounded-2xl p-5 border border-stone-200">
+                <p className="text-xs text-stone-400 uppercase tracking-widest mb-1 font-medium">Selected</p>
+                <p className="text-3xl font-semibold text-emerald-600">{selected}</p>
+                <p className="text-xs text-stone-400 mt-1">{rejected} rejected</p>
+              </div>
+              <div className="bg-white rounded-2xl p-5 border border-stone-200">
+                <p className="text-xs text-stone-400 uppercase tracking-widest mb-1 font-medium">Selected → Joined</p>
+                <p className="text-3xl font-semibold text-blue-600">{selectedToJoinedRatio}%</p>
+                <p className="text-xs text-stone-400 mt-1">{joined} of {selected} joined</p>
+              </div>
+              <div className="bg-white rounded-2xl p-5 border border-stone-200">
+                <p className="text-xs text-stone-400 uppercase tracking-widest mb-1 font-medium">Offered → Joined</p>
+                <p className="text-3xl font-semibold text-violet-600">{offeredToJoinedRatio}%</p>
+                <p className="text-xs text-stone-400 mt-1">{joined} of {offered} offered · {joinedAndLeft} joined & left</p>
+              </div>
             </div>
-            <div className="bg-white rounded-2xl p-6 border border-stone-200">
-              <h2 className="text-sm font-semibold text-stone-600 uppercase tracking-widest mb-5">Recruitment Pipeline</h2>
-              <div className="space-y-3">
-                {funnelData.map(({ stage, count, color }) => {
-                  const pct = total > 0 ? (count / total) * 100 : 0
-                  return (
-                    <div key={stage} className="flex items-center gap-4">
-                      <span className="text-sm text-stone-500 w-36 flex-shrink-0">{stage}</span>
-                      <div className="flex-1 bg-stone-100 rounded-full h-6 overflow-hidden">
-                        <div className="h-full rounded-full flex items-center px-3" style={{ width: `${Math.max(pct, 2)}%`, backgroundColor: color }}>
-                          <span className="text-white text-xs font-medium">{count > 0 ? count : ''}</span>
+
+            {/* Pipeline + Source quality side by side */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+              <div className="bg-white rounded-2xl p-6 border border-stone-200">
+                <h2 className="text-xs font-semibold text-stone-400 uppercase tracking-widest mb-4">Interview Pipeline</h2>
+                <div className="space-y-3">
+                  {funnelData.map(({ stage, count, color }) => {
+                    const pct = hrRound > 0 ? (count / hrRound) * 100 : 0
+                    return (
+                      <div key={stage} className="flex items-center gap-3">
+                        <span className="text-sm text-stone-500 w-32 flex-shrink-0">{stage}</span>
+                        <div className="flex-1 bg-stone-100 rounded-full h-5 overflow-hidden">
+                          <div className="h-full rounded-full flex items-center px-2.5" style={{ width: `${Math.max(pct, 2)}%`, backgroundColor: color }}>
+                            <span className="text-white text-xs font-medium">{count > 0 ? count : ''}</span>
+                          </div>
                         </div>
+                        <span className="text-xs text-stone-400 w-8 text-right">{pct.toFixed(0)}%</span>
                       </div>
-                      <span className="text-sm font-medium text-stone-600 w-10 text-right">{count}</span>
+                    )
+                  })}
+                </div>
+                <p className="text-xs text-stone-300 mt-4">% relative to HR Round interviews ({hrRound})</p>
+              </div>
+
+              <div className="bg-white rounded-2xl p-6 border border-stone-200">
+                <h2 className="text-xs font-semibold text-stone-400 uppercase tracking-widest mb-4">Source Performance</h2>
+                <div className="space-y-3">
+                  {topSourceQuality.slice(0, 6).map(({ src, total: t, selected: s, rate }) => (
+                    <div key={src} className="flex items-center gap-3">
+                      <span className="text-sm text-stone-600 flex-1 truncate">{src}</span>
+                      <span className="text-xs text-stone-400">{t} CVs</span>
+                      <span className="text-xs font-medium text-emerald-600 w-16 text-right">{s} selected</span>
+                      <span className={`text-xs font-semibold w-10 text-right ${rate >= 20 ? 'text-emerald-600' : rate >= 10 ? 'text-amber-500' : 'text-stone-400'}`}>{rate.toFixed(0)}%</span>
+                    </div>
+                  ))}
+                </div>
+                <p className="text-xs text-stone-300 mt-4">Selection rate per source</p>
+              </div>
+            </div>
+
+            {/* Department breakdown */}
+            <div className="bg-white rounded-2xl p-6 border border-stone-200">
+              <h2 className="text-xs font-semibold text-stone-400 uppercase tracking-widest mb-4">By Department</h2>
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                {topDept.map(([dept, count]) => {
+                  const deptSelected = candidates.filter(c => c.department === dept && c.finalStatus === 'Selected').length
+                  const deptJoined = candidates.filter(c => c.department === dept && c.joined === 'Yes').length
+                  return (
+                    <div key={dept} className="border border-stone-100 rounded-xl p-4">
+                      <p className="text-sm font-medium text-stone-700 mb-2 truncate">{dept}</p>
+                      <div className="flex gap-4 text-xs">
+                        <div><span className="text-stone-400">Interviewed </span><span className="font-semibold text-stone-700">{count}</span></div>
+                        <div><span className="text-stone-400">Selected </span><span className="font-semibold text-emerald-600">{deptSelected}</span></div>
+                        <div><span className="text-stone-400">Joined </span><span className="font-semibold text-blue-600">{deptJoined}</span></div>
+                      </div>
                     </div>
                   )
                 })}
               </div>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div className="bg-white rounded-2xl p-6 border border-stone-200">
-                <h2 className="text-sm font-semibold text-stone-600 uppercase tracking-widest mb-5">By Department</h2>
-                <div className="space-y-3">
-                  {topDept.map(([dept, count]) => (
-                    <div key={dept} className="flex items-center gap-3">
-                      <span className="text-sm text-stone-600 flex-1 truncate">{dept}</span>
-                      <div className="w-32 bg-stone-100 rounded-full h-2"><div className="h-2 bg-blue-400 rounded-full" style={{ width: `${(count / total) * 100}%` }}></div></div>
-                      <span className="text-sm font-medium text-stone-600 w-8 text-right">{count}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-              <div className="bg-white rounded-2xl p-6 border border-stone-200">
-                <h2 className="text-sm font-semibold text-stone-600 uppercase tracking-widest mb-5">By Source</h2>
-                <div className="space-y-3">
-                  {topSources.map(([src, count]) => (
-                    <div key={src} className="flex items-center gap-3">
-                      <span className="text-sm text-stone-600 flex-1 truncate">{src}</span>
-                      <div className="w-32 bg-stone-100 rounded-full h-2"><div className="h-2 bg-violet-400 rounded-full" style={{ width: `${(count / total) * 100}%` }}></div></div>
-                      <span className="text-sm font-medium text-stone-600 w-8 text-right">{count}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
           </div>
         )}
 
-        {activeTab === 'trends' && <TimeChart candidates={candidates} />}
+        {activeTab === 'trends' && (
+          <div className="space-y-5">
+            {/* Management summary cards */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="bg-white rounded-2xl p-5 border border-stone-200">
+                <p className="text-xs text-stone-400 uppercase tracking-widest mb-1">Funnel Health</p>
+                <p className="text-2xl font-semibold text-stone-800">{hrRound > 0 ? ((selected/hrRound)*100).toFixed(0) : 0}%</p>
+                <p className="text-xs text-stone-400 mt-1">HR → Selected rate</p>
+              </div>
+              <div className="bg-white rounded-2xl p-5 border border-stone-200">
+                <p className="text-xs text-stone-400 uppercase tracking-widest mb-1">Offer Acceptance</p>
+                <p className="text-2xl font-semibold text-emerald-600">{offeredToJoinedRatio}%</p>
+                <p className="text-xs text-stone-400 mt-1">{joined} joined of {offered} offered</p>
+              </div>
+              <div className="bg-white rounded-2xl p-5 border border-stone-200">
+                <p className="text-xs text-stone-400 uppercase tracking-widest mb-1">Best Source</p>
+                <p className="text-lg font-semibold text-stone-800 truncate">{topSourceQuality[0]?.src || '—'}</p>
+                <p className="text-xs text-stone-400 mt-1">{topSourceQuality[0]?.selected || 0} hires · {topSourceQuality[0]?.rate.toFixed(0) || 0}% rate</p>
+              </div>
+              <div className="bg-white rounded-2xl p-5 border border-stone-200">
+                <p className="text-xs text-stone-400 uppercase tracking-widest mb-1">Attrition</p>
+                <p className="text-2xl font-semibold text-orange-500">{joinedAndLeft}</p>
+                <p className="text-xs text-stone-400 mt-1">Joined & Left · {joined > 0 ? ((joinedAndLeft/joined)*100).toFixed(0) : 0}% of joiners</p>
+              </div>
+            </div>
+            <TimeChart candidates={candidates} />
+          </div>
+        )}
 
         {activeTab === 'candidates' && (
           <div className="space-y-4">
@@ -551,6 +628,7 @@ export default function Dashboard() {
                 <option value="Selected">Selected</option>
                 <option value="Rejected">Rejected</option>
                 <option value="Shortlisted">Shortlisted</option>
+                <option value="Joined & Left">Joined & Left</option>
               </select>
               <select value={filterDept} onChange={e => setFilterDept(e.target.value)} className="border border-stone-200 rounded-lg px-3 py-2 text-sm bg-white text-stone-600 focus:outline-none">
                 <option value="all">All Departments</option>
