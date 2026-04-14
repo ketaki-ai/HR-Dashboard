@@ -373,7 +373,7 @@ export default function Dashboard() {
       <header className="bg-white border-b border-stone-200 px-6 py-4 sticky top-0 z-40">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <img src="/PIXEL_MINT_MEDIA_LOGO_00_3.jpg" alt="Pixel Mint Media" style={{height:'36px', width:'auto'}} />
+            <img src="/logo.jpg" alt="Pixel Mint Media" style={{height:'36px', width:'auto'}} />
             <div>
               <h1 className="text-lg font-semibold text-stone-800">PMM Recruitment</h1>
               <p className="text-xs text-stone-400">{total} candidates tracked</p>
