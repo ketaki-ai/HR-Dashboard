@@ -1,6 +1,17 @@
 'use client'
 import { useState, useEffect, useCallback, useRef } from 'react'
 
+const WA_GROUP = 'https://chat.whatsapp.com/Bcbfh9PJZoUGgAuf7lSwc7'
+
+interface Employee {
+  id: string; empCode: string; name: string; designation: string
+  department: string; reportingTo: string; status: string
+  birthDate: string; joiningDate: string; officialEmail: string
+  contactNo: string; personalEmail: string; bloodGroup: string
+  maritalStatus: string; education: string; activeStatus: string
+  lastWorkingDay: string; reasonForLeaving: string
+}
+
 interface Candidate {
   id: string; name: string; email: string; phone: string
   position: string; department: string; education: string; location: string
@@ -24,6 +35,246 @@ function StatCard({ label, value, sub, color }: { label: string; value: string |
       <p className="text-xs text-stone-400 uppercase tracking-widest mb-1 font-medium">{label}</p>
       <p className={`text-3xl font-semibold ${color || 'text-stone-800'}`}>{value}</p>
       {sub && <p className="text-xs text-stone-400 mt-1">{sub}</p>}
+    </div>
+  )
+}
+
+function InsightsPanel({ candidates }: { candidates: Candidate[] }) {
+  const total = candidates.length
+  const selected = candidates.filter(c => c.finalStatus === 'Selected').length
+  const joined = candidates.filter(c => c.joined === 'Yes').length
+  const shortlisted = candidates.filter(c => c.finalStatus === 'Shortlisted').length
+  const hrRound = candidates.filter(c => c.hrInterview).length
+  const technical = candidates.filter(c => c.technicalRound).length
+  const offered = candidates.filter(c => c.offeredCTC && c.offeredCTC !== '').length
+  const joinedAndLeft = candidates.filter(c => c.finalStatus === 'Joined & Left').length
+
+  const convRate = hrRound > 0 ? (selected / hrRound) * 100 : 0
+  const offerAccept = offered > 0 ? (joined / offered) * 100 : 0
+  const techDropOff = hrRound > 0 ? ((hrRound - technical) / hrRound) * 100 : 0
+  const attritionRate = joined > 0 ? (joinedAndLeft / joined) * 100 : 0
+
+  const sourceCounts = candidates.reduce((acc, c) => {
+    if (!c.source) return acc
+    if (!acc[c.source]) acc[c.source] = { total: 0, selected: 0 }
+    acc[c.source].total++
+    if (c.finalStatus === 'Selected') acc[c.source].selected++
+    return acc
+  }, {} as Record<string, { total: number; selected: number }>)
+  const bestSource = Object.entries(sourceCounts).sort((a, b) => b[1].selected - a[1].selected)[0]
+
+  const insights: { icon: string; color: string; text: string }[] = []
+
+  // Funnel health
+  if (convRate < 10) insights.push({ icon: '🔴', color: 'border-red-200 bg-red-50', text: `Low conversion: only ${convRate.toFixed(0)}% of HR interviews are resulting in hires. Industry benchmark is 15–20%.` })
+  else if (convRate >= 20) insights.push({ icon: '🟢', color: 'border-emerald-200 bg-emerald-50', text: `Strong pipeline: ${convRate.toFixed(0)}% HR-to-hire conversion — above the 15–20% benchmark. Great work!` })
+  else insights.push({ icon: '🟡', color: 'border-amber-200 bg-amber-50', text: `Pipeline converting at ${convRate.toFixed(0)}%. Slightly below the 20% benchmark — review rejection reasons.` })
+
+  // Offer acceptance
+  if (offerAccept < 50 && offered > 2) insights.push({ icon: '🔴', color: 'border-red-200 bg-red-50', text: `Offer acceptance is low at ${offerAccept.toFixed(0)}%. Review CTC competitiveness and offer turnaround time.` })
+  else if (offerAccept >= 75) insights.push({ icon: '🟢', color: 'border-emerald-200 bg-emerald-50', text: `Excellent offer acceptance rate of ${offerAccept.toFixed(0)}% — candidates are happy with the offers.` })
+
+  // Technical drop-off
+  if (techDropOff > 50) insights.push({ icon: '🟡', color: 'border-amber-200 bg-amber-50', text: `${techDropOff.toFixed(0)}% of HR-cleared candidates are not reaching the Technical round. Consider tightening HR screening.` })
+
+  // Shortlisted with no update
+  if (shortlisted > 5) insights.push({ icon: '🔴', color: 'border-red-200 bg-red-50', text: `${shortlisted} candidates are still in "Shortlisted" status. Follow up to avoid losing them to other offers.` })
+  else if (shortlisted > 0) insights.push({ icon: '🟡', color: 'border-amber-200 bg-amber-50', text: `${shortlisted} candidate${shortlisted > 1 ? 's' : ''} pending a decision — update their status to keep the pipeline clean.` })
+
+  // Best source
+  if (bestSource) insights.push({ icon: '💡', color: 'border-blue-200 bg-blue-50', text: `Best source: ${bestSource[0]} has given you ${bestSource[1].selected} hire${bestSource[1].selected !== 1 ? 's' : ''}. Consider investing more here.` })
+
+  // Attrition
+  if (attritionRate > 20) insights.push({ icon: '🔴', color: 'border-red-200 bg-red-50', text: `High early attrition: ${joinedAndLeft} employee${joinedAndLeft !== 1 ? 's' : ''} joined and left. Review onboarding and role clarity.` })
+
+  if (insights.length === 0) insights.push({ icon: '🟢', color: 'border-emerald-200 bg-emerald-50', text: 'Recruitment looks healthy! Keep monitoring for any changes.' })
+
+  return (
+    <div className="bg-white rounded-2xl p-5 border border-stone-200">
+      <h2 className="text-xs font-semibold text-stone-400 uppercase tracking-widest mb-4">Recruitment Health Insights</h2>
+      <div className="space-y-2">
+        {insights.map((ins, i) => (
+          <div key={i} className={`flex gap-3 p-3 rounded-xl border ${ins.color}`}>
+            <span className="text-base flex-shrink-0">{ins.icon}</span>
+            <p className="text-sm text-stone-700 leading-relaxed">{ins.text}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function EmployeeTab({ employees, onRefresh }: { employees: Employee[]; onRefresh: () => void }) {
+  const [sendingEmail, setSendingEmail] = useState<string | null>(null)
+  const [emailSent, setEmailSent] = useState<string | null>(null)
+  const [showAddForm, setShowAddForm] = useState(false)
+  const [form, setForm] = useState({ name: '', designation: '', department: '', officialEmail: '', contactNo: '', birthDate: '', joiningDate: '', status: 'Confirmed', empCode: '', reportingTo: '', personalEmail: '', bloodGroup: '', maritalStatus: '', education: '', activeStatus: 'Active' })
+  const [saving, setSaving] = useState(false)
+
+  const today = new Date()
+  const todayMD = `${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
+  const tomorrowDate = new Date(today); tomorrowDate.setDate(today.getDate() + 1)
+  const tomorrowMD = `${String(tomorrowDate.getMonth() + 1).padStart(2, '0')}-${String(tomorrowDate.getDate()).padStart(2, '0')}`
+
+  const getYears = (dateStr: string) => {
+    if (!dateStr) return 0
+    const d = new Date(dateStr)
+    return today.getFullYear() - d.getFullYear()
+  }
+
+  const getMD = (dateStr: string) => {
+    if (!dateStr) return ''
+    const d = new Date(dateStr)
+    return `${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  }
+
+  const activeEmps = employees.filter(e => e.activeStatus === 'Active' || e.status === 'Confirmed')
+  const birthdays = activeEmps.filter(e => e.birthDate && getMD(e.birthDate) === todayMD)
+  const birthdaysTomorrow = activeEmps.filter(e => e.birthDate && getMD(e.birthDate) === tomorrowMD)
+  const anniversaries = activeEmps.filter(e => e.joiningDate && getMD(e.joiningDate) === todayMD && getYears(e.joiningDate) > 0)
+  const anniversariesTomorrow = activeEmps.filter(e => e.joiningDate && getMD(e.joiningDate) === tomorrowMD && getYears(e.joiningDate) > 0)
+
+  const sendEmail = async (emp: Employee, type: 'birthday' | 'anniversary') => {
+    const emailAddr = emp.officialEmail || emp.personalEmail
+    if (!emailAddr) { alert('No email found for ' + emp.name); return }
+    setSendingEmail(emp.id + type)
+    try {
+      const res = await fetch('/api/send-birthday', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ employeeName: emp.name, employeeEmail: emailAddr, type, years: getYears(emp.joiningDate) })
+      })
+      if (res.ok) { setEmailSent(emp.id + type); setTimeout(() => setEmailSent(null), 3000) }
+      else alert('Failed to send email')
+    } catch { alert('Failed to send email') }
+    finally { setSendingEmail(null) }
+  }
+
+  const openWhatsApp = (emp: Employee, type: 'birthday' | 'anniversary') => {
+    const years = getYears(emp.joiningDate)
+    const msg = type === 'birthday'
+      ? `🎂 *Happy Birthday ${emp.name}!* 🎉\n\nWishing you a wonderful day filled with joy and happiness! Thank you for being an amazing part of the Pixel Mint Media family! 🎊\n\n- Team Pixel Mint Media`
+      : `🎉 *Happy Work Anniversary ${emp.name}!* 🎊\n\nCongratulations on completing *${years} year${years > 1 ? 's' : ''}* with Pixel Mint Media! Your dedication and hard work inspire us all. Here's to many more years together! 🚀\n\n- Team Pixel Mint Media`
+    window.open(`${WA_GROUP}?text=${encodeURIComponent(msg)}`, '_blank')
+  }
+
+  const handleAdd = async () => {
+    if (!form.name || !form.designation) { alert('Name and designation required'); return }
+    setSaving(true)
+    try {
+      await fetch('/api/employees', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form) })
+      onRefresh(); setShowAddForm(false)
+    } catch { alert('Failed to save') }
+    finally { setSaving(false) }
+  }
+
+  const inp = "w-full border border-stone-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-stone-400 bg-stone-50"
+  const lbl = "block text-xs text-stone-500 mb-1 font-medium"
+
+  const EventCard = ({ emp, type, tomorrow }: { emp: Employee; type: 'birthday' | 'anniversary'; tomorrow?: boolean }) => {
+    const years = type === 'anniversary' ? getYears(emp.joiningDate) : 0
+    const isSent = emailSent === emp.id + type
+    const isSending = sendingEmail === emp.id + type
+    return (
+      <div className={`flex items-center justify-between p-3 rounded-xl border ${tomorrow ? 'border-stone-100 bg-stone-50' : type === 'birthday' ? 'border-pink-100 bg-pink-50' : 'border-blue-100 bg-blue-50'}`}>
+        <div>
+          <p className="text-sm font-medium text-stone-800">{emp.name} {tomorrow && <span className="text-xs text-stone-400">(tomorrow)</span>}</p>
+          <p className="text-xs text-stone-500">{emp.designation} · {emp.department}</p>
+          {type === 'anniversary' && <p className="text-xs text-blue-600 font-medium">{years} year{years > 1 ? 's' : ''} 🎊</p>}
+        </div>
+        <div className="flex gap-2">
+          <button onClick={() => openWhatsApp(emp, type)}
+            className="text-xs bg-green-500 text-white px-3 py-1.5 rounded-lg hover:bg-green-600 flex items-center gap-1">
+            💬 WhatsApp
+          </button>
+          <button onClick={() => sendEmail(emp, type)} disabled={isSending}
+            className={`text-xs px-3 py-1.5 rounded-lg flex items-center gap-1 ${isSent ? 'bg-emerald-100 text-emerald-700' : 'bg-stone-800 text-white hover:bg-stone-700'}`}>
+            {isSending ? '...' : isSent ? '✓ Sent' : '✉ Email'}
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-5">
+      {/* Today's events */}
+      {(birthdays.length > 0 || anniversaries.length > 0) && (
+        <div className="bg-white rounded-2xl p-5 border border-stone-200">
+          <h2 className="text-xs font-semibold text-stone-400 uppercase tracking-widest mb-4">🎉 Today's Celebrations</h2>
+          <div className="space-y-2">
+            {birthdays.map(e => <EventCard key={e.id + 'b'} emp={e} type="birthday" />)}
+            {anniversaries.map(e => <EventCard key={e.id + 'a'} emp={e} type="anniversary" />)}
+          </div>
+        </div>
+      )}
+
+      {/* Tomorrow's events */}
+      {(birthdaysTomorrow.length > 0 || anniversariesTomorrow.length > 0) && (
+        <div className="bg-white rounded-2xl p-5 border border-stone-200">
+          <h2 className="text-xs font-semibold text-stone-400 uppercase tracking-widest mb-4">📅 Tomorrow</h2>
+          <div className="space-y-2">
+            {birthdaysTomorrow.map(e => <EventCard key={e.id + 'bt'} emp={e} type="birthday" tomorrow />)}
+            {anniversariesTomorrow.map(e => <EventCard key={e.id + 'at'} emp={e} type="anniversary" tomorrow />)}
+          </div>
+        </div>
+      )}
+
+      {birthdays.length === 0 && anniversaries.length === 0 && birthdaysTomorrow.length === 0 && anniversariesTomorrow.length === 0 && (
+        <div className="bg-white rounded-2xl p-5 border border-stone-200 text-center text-stone-400 text-sm py-8">
+          No birthdays or anniversaries today or tomorrow 🎈
+        </div>
+      )}
+
+      {/* Employee list */}
+      <div className="bg-white rounded-2xl border border-stone-200 overflow-hidden">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-stone-100">
+          <h2 className="text-xs font-semibold text-stone-400 uppercase tracking-widest">Active Employees ({activeEmps.length})</h2>
+          <button onClick={() => setShowAddForm(!showAddForm)} className="text-xs bg-stone-800 text-white px-3 py-1.5 rounded-lg">+ Add Employee</button>
+        </div>
+
+        {showAddForm && (
+          <div className="p-5 border-b border-stone-100 bg-stone-50 grid grid-cols-2 md:grid-cols-3 gap-3">
+            <div><label className={lbl}>Name *</label><input className={inp} value={form.name} onChange={e => setForm({...form, name: e.target.value})} /></div>
+            <div><label className={lbl}>Designation *</label><input className={inp} value={form.designation} onChange={e => setForm({...form, designation: e.target.value})} /></div>
+            <div><label className={lbl}>Department</label><input className={inp} value={form.department} onChange={e => setForm({...form, department: e.target.value})} /></div>
+            <div><label className={lbl}>Official Email</label><input className={inp} type="email" value={form.officialEmail} onChange={e => setForm({...form, officialEmail: e.target.value})} /></div>
+            <div><label className={lbl}>Contact No</label><input className={inp} value={form.contactNo} onChange={e => setForm({...form, contactNo: e.target.value})} /></div>
+            <div><label className={lbl}>Birth Date</label><input className={inp} type="date" value={form.birthDate} onChange={e => setForm({...form, birthDate: e.target.value})} /></div>
+            <div><label className={lbl}>Joining Date</label><input className={inp} type="date" value={form.joiningDate} onChange={e => setForm({...form, joiningDate: e.target.value})} /></div>
+            <div><label className={lbl}>Reporting To</label><input className={inp} value={form.reportingTo} onChange={e => setForm({...form, reportingTo: e.target.value})} /></div>
+            <div className="flex items-end gap-2">
+              <button onClick={handleAdd} disabled={saving} className="flex-1 bg-stone-800 text-white text-xs py-2 rounded-lg">{saving ? 'Saving...' : 'Save'}</button>
+              <button onClick={() => setShowAddForm(false)} className="flex-1 border border-stone-200 text-xs py-2 rounded-lg">Cancel</button>
+            </div>
+          </div>
+        )}
+
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-stone-100">
+                {['Name','Designation','Department','Birthday','Anniversary','Email','Contact'].map(h => (
+                  <th key={h} className="text-left px-4 py-3 text-xs font-semibold text-stone-400 uppercase tracking-wider whitespace-nowrap">{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {activeEmps.map((e, i) => (
+                <tr key={i} className="border-b border-stone-50 hover:bg-stone-50">
+                  <td className="px-4 py-3"><p className="font-medium text-stone-800">{e.name}</p></td>
+                  <td className="px-4 py-3 text-stone-600 text-xs">{e.designation}</td>
+                  <td className="px-4 py-3 text-stone-500 text-xs">{e.department}</td>
+                  <td className="px-4 py-3 text-stone-500 text-xs">{e.birthDate ? new Date(e.birthDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) : '—'}</td>
+                  <td className="px-4 py-3 text-stone-500 text-xs">{e.joiningDate ? new Date(e.joiningDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'}</td>
+                  <td className="px-4 py-3 text-stone-500 text-xs truncate max-w-36">{e.officialEmail || '—'}</td>
+                  <td className="px-4 py-3 text-stone-500 text-xs">{e.contactNo || '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   )
 }
@@ -393,27 +644,49 @@ function TimeChart({ candidates }: { candidates: Candidate[] }) {
 
 export default function Dashboard() {
   const [candidates, setCandidates] = useState<Candidate[]>([])
+  const [employees, setEmployees] = useState<Employee[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [search, setSearch] = useState('')
   const [filterStatus, setFilterStatus] = useState('all')
   const [filterDept, setFilterDept] = useState('all')
   const [showModal, setShowModal] = useState(false)
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'trends' | 'candidates'>('dashboard')
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'trends' | 'candidates' | 'employees'>('dashboard')
+  const [sendingOffer, setSendingOffer] = useState<string | null>(null)
+  const [offerSent, setOfferSent] = useState<string | null>(null)
 
   const fetchCandidates = useCallback(async () => {
     try {
       setError('')
-      const res = await fetch('/api/candidates')
-      if (!res.ok) throw new Error('Failed')
-      const data = await res.json()
-      setCandidates(data.candidates || [])
+      const [candRes, empRes] = await Promise.all([
+        fetch('/api/candidates'),
+        fetch('/api/employees')
+      ])
+      if (candRes.ok) { const d = await candRes.json(); setCandidates(d.candidates || []) }
+      if (empRes.ok) { const d = await empRes.json(); setEmployees(d.employees || []) }
     } catch {
-      setError('Could not load candidates. Check your Google Sheet connection.')
+      setError('Could not load data. Check your Google Sheet connection.')
     } finally {
       setLoading(false)
     }
   }, [])
+
+  useEffect(() => { fetchCandidates() }, [fetchCandidates])
+
+  const sendOfferEmail = async (c: Candidate) => {
+    if (!c.email) { alert('No email found for this candidate'); return }
+    setSendingOffer(c.id)
+    try {
+      const res = await fetch('/api/send-offer', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ candidateName: c.name, candidateEmail: c.email, position: c.position, department: c.department, offeredCTC: c.offeredCTC, joiningDate: c.doj })
+      })
+      if (res.ok) { setOfferSent(c.id); setTimeout(() => setOfferSent(null), 4000) }
+      else alert('Failed to send offer email')
+    } catch { alert('Failed to send offer email') }
+    finally { setSendingOffer(null) }
+  }
 
   useEffect(() => { fetchCandidates() }, [fetchCandidates])
 
@@ -484,7 +757,7 @@ export default function Dashboard() {
               <p className="text-xs text-stone-400">{total} candidates tracked</p>
             </div>
             <nav className="flex gap-1 ml-6 border border-stone-200 rounded-lg p-1">
-              {(['dashboard', 'trends', 'candidates'] as const).map(tab => (
+              {(['dashboard', 'trends', 'candidates', 'employees'] as const).map(tab => (
                 <button key={tab} onClick={() => setActiveTab(tab)}
                   className={`px-4 py-1.5 text-sm rounded-md capitalize transition-all ${activeTab === tab ? 'bg-stone-800 text-white' : 'text-stone-500 hover:text-stone-700'}`}>
                   {tab}
@@ -586,6 +859,9 @@ export default function Dashboard() {
                 })}
               </div>
             </div>
+
+            {/* Insights */}
+            <InsightsPanel candidates={candidates} />
           </div>
         )}
 
@@ -641,14 +917,14 @@ export default function Dashboard() {
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-stone-100">
-                      {['Name','Position','Department','Education','Experience','Source','Interview Date','HR Round','Technical','Culture','Status','CTC'].map(h => (
+                      {['Name','Position','Department','Education','Experience','Source','Interview Date','HR Round','Technical','Culture','Status','CTC','Action'].map(h => (
                         <th key={h} className="text-left px-4 py-3 text-xs font-semibold text-stone-400 uppercase tracking-wider whitespace-nowrap">{h}</th>
                       ))}
                     </tr>
                   </thead>
                   <tbody>
                     {filtered.length === 0 ? (
-                      <tr><td colSpan={12} className="text-center py-12 text-stone-400">No candidates found</td></tr>
+                      <tr><td colSpan={13} className="text-center py-12 text-stone-400">No candidates found</td></tr>
                     ) : filtered.map((c, i) => (
                       <tr key={i} className="border-b border-stone-50 hover:bg-stone-50 transition-colors">
                         <td className="px-4 py-3"><div className="font-medium text-stone-800">{c.name}</div>{c.email && <div className="text-xs text-stone-400 truncate max-w-32">{c.email}</div>}</td>
@@ -665,6 +941,14 @@ export default function Dashboard() {
                           <span className={`px-2 py-1 rounded-full text-xs font-medium ${STATUS_COLORS[c.finalStatus] || 'bg-stone-100 text-stone-600'}`}>{c.finalStatus || '—'}</span>
                         </td>
                         <td className="px-4 py-3 text-stone-500 whitespace-nowrap">{c.offeredCTC ? `₹${Number(c.offeredCTC).toLocaleString('en-IN')}` : '—'}</td>
+                        <td className="px-4 py-3 whitespace-nowrap">
+                          {c.finalStatus === 'Selected' && c.email && (
+                            <button onClick={() => sendOfferEmail(c)} disabled={sendingOffer === c.id}
+                              className={`text-xs px-3 py-1.5 rounded-lg transition-all ${offerSent === c.id ? 'bg-emerald-100 text-emerald-700' : 'bg-stone-800 text-white hover:bg-stone-700'}`}>
+                              {sendingOffer === c.id ? '...' : offerSent === c.id ? '✓ Sent' : '✉ Offer'}
+                            </button>
+                          )}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -672,6 +956,10 @@ export default function Dashboard() {
               </div>
             </div>
           </div>
+        )}
+
+        {activeTab === 'employees' && (
+          <EmployeeTab employees={employees} onRefresh={fetchCandidates} />
         )}
       </main>
     </div>
