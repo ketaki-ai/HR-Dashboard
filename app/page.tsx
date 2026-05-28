@@ -289,7 +289,7 @@ function AddCandidateModal({ onClose, onAdded }: { onClose: () => void; onAdded:
     source: '', sourceDetails: '', interviewDate: '', hrInterview: '',
     technicalRound: '', finalRound: '', finalStatus: 'Shortlisted',
     offeredCTC: '', doj: '', offerAccepted: '', joined: '', reasonNotJoining: '',
-    monthYear: ''
+    monthYear: '', reportingManager: '', workSetup: 'Work from Office', workDays: 'Monday to Friday', jobLocation: ''
   })
   const [saving, setSaving] = useState(false)
   const [parsing, setParsing] = useState(false)
@@ -439,6 +439,23 @@ function AddCandidateModal({ onClose, onAdded }: { onClose: () => void; onAdded:
             </select>
           </div>
           <div className="col-span-2"><label className={lbl}>Reason for Not Joining</label><input className={inp} value={form.reasonNotJoining} onChange={e => setForm({...form, reasonNotJoining: e.target.value})} placeholder="e.g. High salary expectations, Got another offer..." /></div>
+          <div><label className={lbl}>Reporting Manager</label><input className={inp} value={form.reportingManager} onChange={e => setForm({...form, reportingManager: e.target.value})} placeholder="e.g. Sandeep Tapal - Growth Lead" /></div>
+          <div><label className={lbl}>Job Location</label><input className={inp} value={form.jobLocation} onChange={e => setForm({...form, jobLocation: e.target.value})} placeholder="e.g. Mumbai, Maharashtra" /></div>
+          <div><label className={lbl}>Work Setup</label>
+            <select className={inp} value={form.workSetup} onChange={e => setForm({...form, workSetup: e.target.value})}>
+              <option>Work from Office</option>
+              <option>Work from Home</option>
+              <option>Hybrid</option>
+            </select>
+          </div>
+          <div><label className={lbl}>Work Days</label>
+            <select className={inp} value={form.workDays} onChange={e => setForm({...form, workDays: e.target.value})}>
+              <option>Monday to Friday</option>
+              <option>Monday to Saturday</option>
+              <option>5 days a week</option>
+              <option>6 days a week</option>
+            </select>
+          </div>
         </div>
         {error && <p className="px-6 pb-2 text-red-500 text-sm">{error}</p>}
         <div className="p-6 pt-2 flex gap-3 justify-end border-t border-stone-100">
@@ -683,7 +700,18 @@ export default function Dashboard() {
       const res = await fetch('/api/send-offer', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ candidateName: c.name, candidateEmail: c.email, position: c.position, department: c.department, offeredCTC: c.offeredCTC, joiningDate: c.doj })
+        body: JSON.stringify({
+          candidateName: c.name,
+          candidateEmail: c.email,
+          position: c.position,
+          department: c.department,
+          offeredCTC: c.offeredCTC,
+          joiningDate: c.doj,
+          reportingManager: '',
+          jobLocation: '',
+          workSetup: 'Work from Office',
+          workDays: 'Monday to Friday'
+        })
       })
       if (res.ok) { setOfferSent(c.id); setTimeout(() => setOfferSent(null), 4000) }
       else alert('Failed to send offer email')
