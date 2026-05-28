@@ -6,8 +6,9 @@ export async function POST(request: Request) {
   try {
     const { candidateName, candidateEmail, position, department, offeredCTC, joiningDate } = await request.json()
     const ctcFormatted = offeredCTC ? `₹${Number(offeredCTC).toLocaleString('en-IN')} per annum` : 'as discussed'
+    const hrEmail = process.env.GMAIL_USER || 'ketaki@pixelmintmedia.com'
 
-    const html = `
+    const offerHtml = `
 <div style="font-family: Arial, sans-serif; max-width: 600px; color: #1a1a1a; padding: 20px;">
   <img src="https://myhr-dashboardpmm.vercel.app/logo.jpg" alt="Pixel Mint Media" style="height: 50px; margin-bottom: 24px;" />
   <p>Dear ${candidateName},</p>
@@ -25,6 +26,14 @@ export async function POST(request: Request) {
   <a href="mailto:ketaki@pixelmintmedia.com">ketaki@pixelmintmedia.com</a></p>
 </div>`
 
+    const html = `
+<div style="font-family:Arial,sans-serif;max-width:600px;padding:16px;background:#fff3cd;border:2px solid #ffc107;border-radius:8px;margin-bottom:24px;">
+  <p style="margin:0;font-size:15px;font-weight:bold;">📧 Action Required: Forward this email to the candidate</p>
+  <p style="margin:8px 0 4px;">Candidate email: <a href="mailto:${candidateEmail}" style="color:#0066cc;font-weight:bold;">${candidateEmail}</a></p>
+  <p style="margin:0;font-size:12px;color:#666;">Please remove this yellow box before forwarding.</p>
+</div>
+${offerHtml}`
+
     const res = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: {
@@ -32,11 +41,10 @@ export async function POST(request: Request) {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        from: 'Ketaki Vaidya - HR <onboarding@resend.dev>',
-        to: [candidateEmail],
-        subject: `Offer Letter - ${position} | Pixel Mint Media`,
+        from: 'HR Dashboard <onboarding@resend.dev>',
+        to: [hrEmail],
+        subject: `Offer Letter Ready - ${candidateName} (${position})`,
         html,
-        reply_to: process.env.GMAIL_USER,
       }),
     })
 
