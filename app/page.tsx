@@ -128,7 +128,9 @@ function EmployeeTab({ employees, onRefresh }: { employees: Employee[]; onRefres
     return `${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
   }
 
-  const activeEmps = employees.filter(e => e.activeStatus === 'Active' || e.status === 'Confirmed')
+  const activeEmps = employees.filter(e => 
+    e.status === 'Confirmed' || e.status === 'Probation' || e.activeStatus === 'Active'
+  )
   const birthdays = activeEmps.filter(e => e.birthDate && getMD(e.birthDate) === todayMD)
   const birthdaysTomorrow = activeEmps.filter(e => e.birthDate && getMD(e.birthDate) === tomorrowMD)
   const anniversaries = activeEmps.filter(e => e.joiningDate && getMD(e.joiningDate) === todayMD && getYears(e.joiningDate) > 0)
