@@ -5,40 +5,24 @@ export const dynamic = 'force-dynamic'
 export async function POST(request: Request) {
   try {
     const { employeeName, employeeEmail, type, years } = await request.json()
-
-    const tokenRes = await fetch(
-      `https://login.microsoftonline.com/${process.env.MICROSOFT_TENANT_ID}/oauth2/v2.0/token`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: new URLSearchParams({
-          grant_type: 'client_credentials',
-          client_id: process.env.MICROSOFT_CLIENT_ID || '',
-          client_secret: process.env.MICROSOFT_CLIENT_SECRET || '',
-          scope: 'https://graph.microsoft.com/.default',
-        }),
-      }
-    )
-
-    const tokenData = await tokenRes.json()
-    if (!tokenData.access_token) throw new Error('Failed to get access token')
-
+    const hrEmail = process.env.GMAIL_USER || 'ketaki@pixelmintmedia.com'
     const isBirthday = type === 'birthday'
+
     const subject = isBirthday
       ? `Happy Birthday ${employeeName}! 🎂`
       : `Happy Work Anniversary ${employeeName}! 🎉`
 
-    const emailBody = isBirthday
-      ? `<div style="font-family: Arial, sans-serif; max-width: 500px; color: #1a1a1a;">
-          <img src="https://myhr-dashboardpmm.vercel.app/logo.jpg" alt="Pixel Mint Media" style="height: 50px; margin-bottom: 24px;" />
+    const messageHtml = isBirthday
+      ? `<div style="font-family:Arial,sans-serif;max-width:500px;color:#1a1a1a;padding:20px;">
+          <img src="https://myhr-dashboardpmm.vercel.app/logo.jpg" alt="Pixel Mint Media" style="height:50px;margin-bottom:24px;" />
           <p>Dear ${employeeName},</p>
           <p>🎂 Wishing you a very <strong>Happy Birthday!</strong></p>
           <p>May this special day bring you joy, happiness, and all that you wish for. Thank you for being an amazing part of the Pixel Mint Media family!</p>
           <p>Have a wonderful day!</p>
           <p>Warm regards,<br/><strong>Ketaki Vaidya</strong><br/>HR Manager, Pixel Mint Media</p>
         </div>`
-      : `<div style="font-family: Arial, sans-serif; max-width: 500px; color: #1a1a1a;">
-          <img src="https://myhr-dashboardpmm.vercel.app/logo.jpg" alt="Pixel Mint Media" style="height: 50px; margin-bottom: 24px;" />
+      : `<div style="font-family:Arial,sans-serif;max-width:500px;color:#1a1a1a;padding:20px;">
+          <img src="https://myhr-dashboardpmm.vercel.app/logo.jpg" alt="Pixel Mint Media" style="height:50px;margin-bottom:24px;" />
           <p>Dear ${employeeName},</p>
           <p>🎉 Congratulations on completing <strong>${years} year${years > 1 ? 's' : ''}</strong> with Pixel Mint Media!</p>
           <p>Your dedication, hard work, and contribution have been invaluable to our team. We are truly grateful to have you with us.</p>
@@ -46,29 +30,32 @@ export async function POST(request: Request) {
           <p>Warm regards,<br/><strong>Ketaki Vaidya</strong><br/>HR Manager, Pixel Mint Media</p>
         </div>`
 
-    await fetch(
-      `https://graph.microsoft.com/v1.0/users/${process.env.HR_EMAIL}/sendMail`,
-      {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${tokenData.access_token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          message: {
-            subject,
-            body: { contentType: 'HTML', content: emailBody },
-            toRecipients: [{ emailAddress: { address: employeeEmail } }],
-            from: { emailAddress: { address: process.env.HR_EMAIL, name: 'Ketaki Vaidya - HR' } },
-          },
-          saveToSentItems: true,
-        }),
-      }
-    )
+    const html = `
+<div style="font-family:Arial,sans-serif;max-width:600px;padding:16px;background:#fff3cd;border:2px solid #ffc107;border-radius:8px;margin-bottom:24px;">
+  <p style="margin:0;font-size:15px;font-weight:bold;">📧 Action Required: Forward this email to the employee</p>
+  <p style="margin:8px 0 4px;">Employee email: <a href="mailto:${employeeEmail}" style="color:#0066cc;font-weight:bold;">${employeeEmail}</a></p>
+  <p style="margin:0;font-size:12px;color:#666;">Please remove this yellow box before forwarding.</p>
+</div>
+${messageHtml}`
 
+    const res = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${process.env.RESEND_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        from: 'HR Dashboard <onboarding@resend.dev>',
+        to: [hrEmail],
+        subject: `${subject} - Forward to Employee`,
+        html,
+      }),
+    })
+
+    if (!res.ok) throw new Error(await res.text())
     return NextResponse.json({ success: true })
   } catch (error) {
-    console.error('Send birthday/anniversary error:', error)
+    console.error('Birthday email error:', error)
     return NextResponse.json({ error: String(error) }, { status: 500 })
   }
 }
