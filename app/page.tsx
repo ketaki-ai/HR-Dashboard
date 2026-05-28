@@ -129,7 +129,8 @@ function EmployeeTab({ employees, onRefresh }: { employees: Employee[]; onRefres
   }
 
   const activeEmps = employees.filter(e => 
-    e.status === 'Confirmed' || e.status === 'Probation' || e.activeStatus === 'Active'
+    (e.status === 'Confirmed' || e.status === 'Probation' || e.activeStatus === 'Active') &&
+    !e.lastWorkingDay
   )
   const birthdays = activeEmps.filter(e => e.birthDate && getMD(e.birthDate) === todayMD)
   const birthdaysTomorrow = activeEmps.filter(e => e.birthDate && getMD(e.birthDate) === tomorrowMD)
